@@ -553,9 +553,14 @@ pub fn Pool(
             self._curr_cycle = slice.items(.@"Pool._curr_cycle");
             inline for (column_fields, 0..) |column_field, i| {
                 const F = column_field.type;
-                const p = slice.ptrs[private_fields.len + i];
-                const f = @as([*]F, @ptrCast(@alignCast(p)));
-                @field(self.columns, column_field.name) = f[0..slice.len];
+                if (slice.len == 0) {
+                    // When storage is empty, create an empty slice with a valid pointer
+                    @field(self.columns, column_field.name) = &[0]F{};
+                } else {
+                    const p = slice.ptrs[private_fields.len + i];
+                    const f = @as([*]F, @ptrCast(@alignCast(p)));
+                    @field(self.columns, column_field.name) = f[0..slice.len];
+                }
             }
         }
 
@@ -1464,6 +1469,16 @@ test "Adds and removes triggering resize" {
             try pool.remove(handle);
         }
     }
+}
+
+test "addIfNotFull with columns from empty pool" {
+    const TestPool = Pool(16, 16, void, struct { info: u32 });
+
+    var pool = TestPool.init(std.testing.allocator);
+    defer pool.deinit();
+
+    const handle = pool.addIfNotFull(.{ .info = 42 });
+    try expect(handle != null);
 }
 
 //------------------------------------------------------------------------------
