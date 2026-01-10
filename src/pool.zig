@@ -553,8 +553,8 @@ pub fn Pool(
             self._curr_cycle = slice.items(.@"Pool._curr_cycle");
             inline for (column_fields, 0..) |column_field, i| {
                 const F = column_field.type;
-                if (slice.len == 0) {
-                    // When storage is empty, create an empty slice with a valid pointer
+                // When capacity > 0 but len == 0, ptrs are valid; when capacity == 0, use empty slice
+                if (self._storage.capacity == 0) {
                     @field(self.columns, column_field.name) = &[0]F{};
                 } else {
                     const p = slice.ptrs[private_fields.len + i];
@@ -1479,6 +1479,45 @@ test "addIfNotFull with columns from empty pool" {
 
     const handle = pool.addIfNotFull(.{ .info = 42 });
     try expect(handle != null);
+}
+
+test "addIfNotFull with initCapacity like zgpu" {
+    const TestPool = Pool(16, 16, void, struct { info: u32 });
+
+    var pool = try TestPool.initCapacity(std.testing.allocator, 256);
+    defer pool.deinit();
+
+    const handle = pool.addIfNotFull(.{ .info = 42 });
+    try expect(handle != null);
+    if (handle) |h| {
+        const value = pool.getColumn(h, .info) catch unreachable;
+        try expectEqual(@as(u32, 42), value);
+    }
+}
+
+test "addIfNotFull with complex info like BufferInfo" {
+    const ComplexInfo = struct {
+        gpuobj: ?*const anyopaque = null,
+        size: u64 = 0,
+        usage: u32 = 0,
+    };
+    const TestPool = Pool(16, 16, void, struct { info: ComplexInfo });
+
+    var pool = try TestPool.initCapacity(std.testing.allocator, 256);
+    defer pool.deinit();
+
+    const info_value = ComplexInfo{
+        .gpuobj = null,
+        .size = 123,
+        .usage = 456,
+    };
+    const handle = pool.addIfNotFull(.{ .info = info_value });
+    try expect(handle != null);
+    if (handle) |h| {
+        const value = pool.getColumn(h, .info) catch unreachable;
+        try expectEqual(@as(u64, 123), value.size);
+        try expectEqual(@as(u32, 456), value.usage);
+    }
 }
 
 //------------------------------------------------------------------------------
